@@ -465,7 +465,6 @@ setup_work_dir() {
 }
 
 setup_docker_repository() {
-        # Clone or pull the latest changes if the repo already exists
     if [ ! -d "docker" ]; then
         gum spin -s line --title "Cloning the nesaorg/docker repository..." -- git clone https://github.com/nesaorg/docker.git
     else
@@ -474,6 +473,10 @@ setup_docker_repository() {
         cd ..
     fi
 
+    # Bersihkan cache Git yang tidak diperlukan
+    echo "Cleaning up Git objects to save space..."
+    cd "$WORKING_DIRECTORY/docker" && git gc --aggressive --prune=now && cd -
+
     # Create symlink for env directory
     if [ -d "docker" ]; then
         ln -sfn "$env_dir" "docker/env"
@@ -481,7 +484,11 @@ setup_docker_repository() {
         echo "Error: Docker directory does not exist."
         exit 1
     fi
+
+    # Bersihkan temporary files setelah setup
+    cleanup_temp_files
 }
+
 
 get_swarms_map() {
     local url="https://lcd.test.nesa.ai/nesachain/dht/get_orchestrators"
@@ -710,7 +717,6 @@ compose_up() {
         compose_ext=".nvidia.yml"
     fi
 
-
     if [[ "$NESA_NODE_TYPE" == "community" ]]; then
         compose_files="compose.community${compose_ext}"
     else
@@ -731,6 +737,7 @@ compose_up() {
         fi 
     fi
 
+    echo "Starting Docker Compose with $compose_files..."
     docker compose -f $compose_files up --pull always -d --wait
 
     if [[ $? -ne 0 ]]; then
@@ -739,6 +746,9 @@ compose_up() {
     else
         echo "Docker Compose started successfully."
     fi
+
+    # Bersihkan Docker images setelah container berjalan
+    cleanup_docker
 }
 
 load_node_id() {
@@ -1146,7 +1156,24 @@ cd "$WORKING_DIRECTORY/docker" || {
 
 compose_up
 
+# Function to clean up Docker images and other files
+cleanup_docker() {
+    echo "Cleaning up unused Docker data..."
+    docker system prune -af --volumes
+}
+
+cleanup_temp_files() {
+    echo "Removing temporary files..."
+    rm -rf "$WORKING_DIRECTORY/tmp"/*
+    rm -rf "$WORKING_DIRECTORY/docker/tmp"/*
+}
 
 cd "$init_pwd" || return
 echo -e "Congratulations! Your $(gum style --foreground "$main_color" "nesa") node was successfully bootstrapped!"
 # set +x
+
+# Cleanup sebelum keluar
+cleanup_docker
+cleanup_temp_files
+
+echo "Cleaning up completed. Node setup successful!"
